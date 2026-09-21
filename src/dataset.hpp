@@ -29,6 +29,7 @@ public:
     }
 
     void print_summary(std::ostream &out = std::cout) const;
+    DatasetInfo analyze() const;
 };
 
 std::vector<std::string> split(
@@ -39,3 +40,6 @@ Dataset load_dataset(
     const std::filesystem::path &filepath,
     char delimiter = ',', // разделитель
     const std::string &missing_marker = "NA");
+
+double quantile(const std::vector<double> &sorted_values, double p);
+void print_numeric_histogram(const std::vector<double>& values, int num_bins = 10);

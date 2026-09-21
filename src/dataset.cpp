@@ -8,6 +8,28 @@
 #include <fstream>
 #include <charconv>
 #include <format>
+#include <cmath>
+#include <algorithm>
+#include <ranges>
+
+double quantile(const std::vector<double> &sorted_values, double p)
+{
+    if (sorted_values.empty())
+    {
+        return 0.0;
+    }
+
+    double pos = 1 + (sorted_values.size() - 1) * p;
+    if (pos == std::floor(pos))
+    {
+        return sorted_values[static_cast<std::size_t>(pos)];
+    }
+
+    std::size_t lo = static_cast<std::size_t>(std::floor(pos));
+    double f = pos - lo;
+
+    return sorted_values[lo] + f * (sorted_values[lo + 1] - sorted_values[lo]);
+}
 
 // строка -> вектор
 std::vector<std::string> split(
@@ -229,4 +251,94 @@ void Dataset::print_summary(std::ostream &out) const
     }
 
     out << std::format("\nВсего пропусков: {} в {} признаках\n", total_missing, cols_with_missing);
+}
+
+DatasetInfo Dataset::analyze() const
+{
+    DatasetInfo info;
+
+    for (const auto &[name, col] : columns_)
+    {
+        if (std::holds_alternative<NumericColumn>(col))
+        {
+            const auto &num_col = std::get<NumericColumn>(col);
+            NumericFeatureInfo num_info;
+
+            std::vector<double> values;
+            for (const auto &val : num_col.values)
+            {
+                if (val.has_value())
+                {
+                    values.push_back(*val);
+                }
+                else
+                {
+                    num_info.count_missing++;
+                }
+            }
+
+            if (values.empty())
+            {
+                info[name] = num_info;
+                continue;
+            }
+
+            auto [min_it, max_it] = std::ranges::minmax_element(values);
+            num_info.minimum = *min_it;
+            num_info.maximum = *max_it;
+
+            double sum = 0.0;
+            for (const auto &val : values)
+            {
+                sum += val;
+            }
+            num_info.medium = sum / values.size();
+
+            double var_sum;
+            for (const auto &val : values)
+            {
+                double diff = num_info.medium - val;
+                var_sum += diff * diff;
+            }
+            num_info.dispersion = var_sum / values.size();
+
+            std::ranges::sort(values);
+            num_info.q05 = quantile(values, 0.05);
+            num_info.q25 = quantile(values, 0.25);
+            num_info.median = quantile(values, 0.5);
+            num_info.q75 = quantile(values, 0.75);
+            num_info.q95 = quantile(values, 0.95);
+
+            info[name] = num_info;
+        }
+        else
+        {
+            const auto &cat_col = std::get<CategoricalColumn>(col);
+            CategoricalFeatureInfo cat_info;
+
+            for (const auto &val : cat_col.values)
+            {
+                if (val.has_value())
+                {
+                    const std::string &s = *val;
+                    cat_info.frequencies[s]++;
+                    if (cat_info.frequencies[s] == 1)
+                    {
+                        cat_info.categories.push_back(s);
+                    }
+                }
+                else
+                {
+                    cat_info.count_missing++;
+                }
+            }
+
+            info[name] = cat_info;
+        }
+    }
+    return info;
+}
+
+void print_numeric_histogram(const std::vector<double>& values, int num_bins = 10) {
+    
 }
