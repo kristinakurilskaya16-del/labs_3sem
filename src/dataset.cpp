@@ -20,6 +20,7 @@ double quantile(const std::vector<double> &sorted_values, double p)
     }
 
     double pos = 1 + (sorted_values.size() - 1) * p;
+
     if (pos == std::floor(pos))
     {
         return sorted_values[static_cast<std::size_t>(pos)];
@@ -29,6 +30,36 @@ double quantile(const std::vector<double> &sorted_values, double p)
     double f = pos - lo;
 
     return sorted_values[lo] + f * (sorted_values[lo + 1] - sorted_values[lo]);
+}
+
+std::vector<std::string> Dataset::get_feature_names() const
+{
+    std::vector<std::string> names;
+
+    for (const auto &[name, col] : columns_)
+    {
+        names.push_back(name);
+    }
+    return names;
+}
+
+std::size_t Dataset::get_num_rows() const
+{
+    if (columns_.empty())
+    {
+        return 0;
+    }
+
+    const auto &first_col = columns_.begin()->second; // begin - ключ, second - значение
+
+    if (std::holds_alternative<NumericColumn>(first_col))
+    {
+        return std::get<NumericColumn>(first_col).values.size();
+    }
+    else
+    {
+        return std::get<CategoricalColumn>(first_col).values.size();
+    }
 }
 
 // строка -> вектор
@@ -58,7 +89,7 @@ std::vector<std::string> split(
 
 Dataset load_dataset(
     const std::filesystem::path &filepath,
-    char delimiter, // разделитель
+    char delimiter,
     const std::string &missing_marker)
 {
     std::ifstream file(filepath); // почитать
@@ -93,7 +124,6 @@ Dataset load_dataset(
 
     while (getline(file, line))
     {
-
         if (line.empty())
         {
             continue;
@@ -183,17 +213,13 @@ Dataset load_dataset(
             dataset.add_column(col_name, cat_col);
         }
     }
-    if (!raw_columns.empty())
-    {
-        dataset.set_num_rows(raw_columns[0].size());
-    }
 
     return dataset;
 }
 
 void Dataset::print_summary(std::ostream &out) const
 {
-    out << std::format("Объектов: {}\n", num_rows_);
+    out << std::format("Объектов: {}\n", get_num_rows());
     out << std::format("Признаков: {}\n\n", columns_.size());
 
     out << std::format("{:>4}{:<20}{:<30}{:^20}\n", "#", "Признак", "Тип", "Пропуски");
@@ -201,6 +227,7 @@ void Dataset::print_summary(std::ostream &out) const
     std::size_t index = 0;
     std::size_t total_missing = 0;
     std::size_t cols_with_missing = 0;
+    std::size_t num_rows = get_num_rows();
 
     for (const auto &[name, col] : columns_)
     {
@@ -236,7 +263,7 @@ void Dataset::print_summary(std::ostream &out) const
 
         if (missing_count > 0)
         {
-            double result = 100.0 * missing_count / num_rows_;
+            double result = 100.0 * missing_count / num_rows;
             out << std::format("{:>4}{:<20}{:<30} {} ({:.1f}%)\n",
                                index, name, type_str, missing_count, result);
             total_missing += missing_count;
@@ -265,15 +292,16 @@ DatasetInfo Dataset::analyze() const
             NumericFeatureInfo num_info;
 
             std::vector<double> values;
+
             for (const auto &val : num_col.values)
             {
                 if (val.has_value())
                 {
-                    values.push_back(*val);
+                    values.push_back(*val); // разыменование std::optional
                 }
                 else
                 {
-                    num_info.count_missing++;
+                    num_info.missing_count++;
                 }
             }
 
@@ -284,25 +312,26 @@ DatasetInfo Dataset::analyze() const
             }
 
             auto [min_it, max_it] = std::ranges::minmax_element(values);
-            num_info.minimum = *min_it;
-            num_info.maximum = *max_it;
+            num_info.min = *min_it;
+            num_info.max = *max_it;
 
             double sum = 0.0;
             for (const auto &val : values)
             {
                 sum += val;
             }
-            num_info.medium = sum / values.size();
+            num_info.mean = sum / values.size();
 
             double var_sum;
             for (const auto &val : values)
             {
-                double diff = num_info.medium - val;
+                double diff = num_info.mean - val;
                 var_sum += diff * diff;
             }
-            num_info.dispersion = var_sum / values.size();
+            num_info.variance = var_sum / values.size();
 
             std::ranges::sort(values);
+
             num_info.q05 = quantile(values, 0.05);
             num_info.q25 = quantile(values, 0.25);
             num_info.median = quantile(values, 0.5);
@@ -329,7 +358,7 @@ DatasetInfo Dataset::analyze() const
                 }
                 else
                 {
-                    cat_info.count_missing++;
+                    cat_info.missing_count++;
                 }
             }
 
@@ -339,6 +368,106 @@ DatasetInfo Dataset::analyze() const
     return info;
 }
 
-void print_numeric_histogram(const std::vector<double>& values, int num_bins = 10) {
-    
+void print_numeric_histogram(std::span<const double> values, double min, double max, int num_bins = 10)
+{
+    if (values.empty() || min == max)
+    {
+        std::cout << "Невозможно построить гистограмму.";
+        return;
+    }
+
+    double bin_width = (max - min) / num_bins;
+
+    std::vector<int> counts(num_bins, 0); // (размер, начальное значение)
+
+    for (double v : values)
+    {
+        int bin = static_cast<int>((v - min) / bin_width); // смещаем минимум -> 0
+
+        if (bin >= num_bins)
+        {
+            bin = num_bins - 1;
+        }
+
+        counts[bin]++;
+    }
+
+    int max_count = *std::ranges::max_element(counts); // для масштаба
+
+    for (int i = 0; i < num_bins; ++i)
+    {
+        double bin_start = min + i * bin_width;
+        double bin_end = bin_start + bin_width;
+
+        int bar_length = static_cast<int>(30.0 * counts[i] / max_count);
+
+        std::string bar(bar_length, '#');
+        std::cout << std::format("  [{:<8.2f}, {:<8.2f})  {:<30}  {}\n",
+                                 bin_start, bin_end, bar, counts[i]);
+    }
+}
+
+void print_categorical_histogram(const CategoricalFeatureInfo &cat_info)
+{
+    if (cat_info.frequencies.empty())
+    {
+        std::cout << "Невозможно построить гистограмму.";
+        return;
+    }
+
+    int max_freq = 0;
+    for (const auto &[cat, freq] : cat_info.frequencies)
+    {
+        if (freq > max_freq)
+        {
+            max_freq = freq;
+        }
+    }
+
+    for (const auto &cat : cat_info.categories)
+    {
+        int freq = cat_info.frequencies.at(cat); // поиск значения по ключу
+
+        int bar_length = static_cast<int>(30.0 * freq / max_freq);
+
+        std::string bar(bar_length, '#');
+        std::cout << std::format("  {:<25}  {:<30}  {}\n", cat, bar, freq);
+    }
+}
+
+void print_numeric_info(std::size_t index, const std::string &name, const NumericFeatureInfo &info, std::span<const double> clean_values)
+{
+    std::cout << std::format("\nПризнак {}: {} (числовой)\n", index, name);
+    std::cout << std::format("  пропусков: {}\n", info.missing_count);
+
+    if (clean_values.empty())
+    {
+        std::cout << "  (Все значения пропущены, статистика недоступна)\n";
+        return;
+    }
+
+    std::cout << std::format("  min: {:.3f}    max: {:.3f}\n", info.min, info.max);
+    std::cout << std::format("  mean: {:.3f}   var: {:.3f}\n", info.mean, info.variance);
+    std::cout << std::format("  q05: {:.3f}\n", info.q05);
+    std::cout << std::format("  q25: {:.3f}\n", info.q25);
+    std::cout << std::format("  q50: {:.3f}\n", info.median);
+    std::cout << std::format("  q75: {:.3f}\n", info.q75);
+    std::cout << std::format("  q95: {:.3f}\n", info.q95);
+
+    std::cout << "\n  Гистограмма:\n";
+    print_numeric_histogram(clean_values, info.min, info.max, 10);
+}
+
+void print_categorical_info(std::size_t index, const std::string &name, const CategoricalFeatureInfo &info)
+{
+    std::cout << std::format("\nПризнак {}: {} (категориальный)\n", index, name);
+    std::cout << std::format("  пропусков: {}\n", info.missing_count);
+
+    if (info.categories.empty())
+    {
+        std::cout << "  (Нет категорий)\n";
+        return;
+    }
+
+    print_categorical_histogram(info);
 }
