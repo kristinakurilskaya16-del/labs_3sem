@@ -32,6 +32,94 @@ double quantile(const std::vector<double> &sorted_values, double p)
     return sorted_values[lo] + f * (sorted_values[lo + 1] - sorted_values[lo]);
 }
 
+double scale_value(double x, const NumericFeatureInfo &info, Scaling scaling)
+{
+    switch (scaling)
+    {
+    case Scaling::MinMax:
+    {
+        double denom = info.max - info.min;
+        if (denom == 0.0)
+            return 0.0;
+        return (x - info.min) / denom;
+    }
+
+    case Scaling::Robust:
+    {
+        double std_dev = std::sqrt(info.variance);
+        if (std_dev == 0.0)
+            return 0.0;
+        return (x - info.mean) / std_dev;
+    }
+
+    case Scaling::Standart:
+    {
+        double denom = info.q75 - info.q25;
+        if (denom == 0.0)
+            return 0.0;
+        return (x - info.median) / denom;
+    }
+    }
+
+    return 0.0;
+}
+
+void encode_categorial(
+    const std::vector<std::optional<std::string>> &values,
+    const std::vector<std::string> &sorted_categories,
+    Encoding encoding,
+    const std::string &name,
+    std::vector<std::vector<double>> &result_columns,
+    std::vector<std::string> &feature_names)
+{
+    std::size_t num_rows = values.size();
+
+    switch (encoding)
+    {
+    case Encoding::OneHot:
+    {
+        for (const std::string &category : sorted_categories)
+        {
+            std::vector<double> one_hot_column(num_rows, 0.0);
+
+            for (std::size_t i = 0; i < num_rows; ++i)
+            {
+                if (values[i].has_value() && *values[i] == category)
+                {
+                    one_hot_column[i] = 1.0;
+                }
+            }
+
+            result_columns.push_back(std::move(one_hot_column));
+            feature_names.push_back(name + '_' + category);
+        }
+
+        break;
+    }
+
+    case Encoding::Ordinal:
+    {
+        std::vector<double> encoded_values(num_rows);
+
+        for (std::size_t i = 0; i < num_rows; ++i)
+        {
+            if (values[i].has_value())
+            {
+                auto it = std::find(sorted_categories.begin(), sorted_categories.end(), *values[i]);
+                if (it != sorted_categories.end())
+                {
+                    encoded_values[i] = static_cast<double>(std::distance(sorted_categories.begin(), it));
+                }
+            }
+        }
+
+        result_columns.push_back(std::move(encoded_values));
+        feature_names.push_back(name);
+        break;
+    }
+    }
+}
+
 std::vector<std::string> Dataset::get_feature_names() const
 {
     std::vector<std::string> names;
@@ -366,6 +454,101 @@ DatasetInfo Dataset::analyze() const
         }
     }
     return info;
+}
+
+void Dataset::impute(const DatasetInfo &info, NumericImputation strategy)
+{
+    for (auto &[name, col] : columns_)
+    {
+        const FeatureInfo &fi = info.at(name);
+
+        if (std::holds_alternative<NumericColumn>(col))
+        {
+            auto &num_col = std::get<NumericColumn>(col);
+            const auto &num_info = std::get<NumericFeatureInfo>(fi);
+
+            double fill_value = 0.0;
+            if (strategy == NumericImputation::Mean)
+            {
+                fill_value = num_info.mean;
+            }
+            else if (strategy == NumericImputation::Median)
+            {
+                fill_value = num_info.median;
+            }
+
+            for (auto &val : num_col.values)
+            {
+                if (!val.has_value())
+                {
+                    val = fill_value;
+                }
+            }
+        }
+        else
+        {
+            auto &cat_col = std::get<CategoricalColumn>(col);
+
+            for (auto &val : cat_col.values)
+            {
+                if (!val.has_value())
+                {
+                    val = "__MISSING__";
+                }
+            }
+        }
+    }
+}
+
+TransformedDataset transform(const DatasetInfo &info, Scaling scaling, Encoding encoding,
+                             Layout layout = Layout::RowMajor) const
+{
+    std::size_t num_rows = get_num_rows();
+    std::vector<std::string> feature_names;
+    std::vector<std::vector<double>> result_columns;
+
+    for (const auto &[name, cols] : columns_)
+    {
+        const FeatureInfo &fi = info.at(name);
+
+        if (std::holds_alternative<NumericColumn>(col))
+        {
+            const auto &num_col = std::get<NumericColumn>(col);
+            const auto &num_info = std::get<NumericFeatureInfo>(fi);
+
+            std::vector<double> scaled_values(num_rows);
+
+            for (std::size_t i = 0; i < num_rows; ++i)
+            {
+                if (num_col.values[i].has_value())
+                {
+                    scaled_values[i] = scale_value(*num_col.values[i], num_info, scaling);
+                }
+            }
+
+            result_columns.push_back(std::move(scaled_values));
+            feature_names.push_back(name);
+        }
+        else
+        {
+            const auto &cat_col = std::get<CategoricalColumn>(col);
+            const auto &cat_info = std::get<CategoricalFeatureInfo>(fi);
+
+            std::vector<std::string> sorted_categories = cat_info.categories;
+            std::sort(sorted_categories.begin(), sorted_categories.end());
+
+            encode_categorial(cat_col.values, sorted_categories, encoding, name, result_columns, feature_names);
+        }
+    }
+
+    std::size_t num_cols = result_columns.size();
+    Matrix matrix(num_rows, num_cols, layout);
+
+    for (std::size_t j = 0; j < num_cols; ++j)
+        for (std::size_t i = 0; i < num_rows; ++i)
+            matrix(i, j) = result_columns[j][i];
+
+    return TransformedDataset{std::move(matrix), std::move(feature_names)};
 }
 
 void print_numeric_histogram(std::span<const double> values, double min, double max, int num_bins = 10)

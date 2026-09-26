@@ -8,12 +8,11 @@
 int main()
 {
     Dataset dataset = load_dataset("data/data.csv");
-    dataset.print_summary();
+    dataset.print_summary(); 
 
     DatasetInfo info = dataset.analyze();
     std::vector<std::string> feature_names = dataset.get_feature_names();
 
-    int number;
     while (true)
     {
         std::cout << "\nВведите номер признака(или 'stop' для выхода): ";
@@ -27,10 +26,7 @@ int main()
         }
 
         if (input == "stop")
-        {
-            std::cout << "Необходимо ли сохранить преобразованный датасет?('yes' - да, 'no' - нет)";
             break;
-        }
 
         int index;
         auto [ptr, ec] = std::from_chars(input.data(), input.data() + input.size(), index);
@@ -73,6 +69,30 @@ int main()
             const auto &cat_info = std::get<CategoricalFeatureInfo>(fi);
             print_categorical_info(index, name, cat_info);
         }
+    }
+
+    std::cout << "\nХотите сохранить преобразованный датасет? (yes/no): ";
+    std::string answer;
+
+    std::getline(std::cin, answer);
+    if (!answer.empty() && answer.back() == '\r')
+        answer.pop_back();
+
+    if (answer == "yes" || answer == "y")
+    {
+        dataset.impute(info, NumericImputation::Median);
+
+        TransformedDataset transformed = dataset.transform(info, Scaling::Robust, Encoding::OneHot);
+
+        transformed.matrix.save("data/transformed.bin");
+        std::ofstream names_file("data/feature_names.txt");
+
+        for (const auto &fname : transformed.feature_names)
+        {
+            names_file << fname << "\n";
+        }
+
+        std::cout << "Сохранено! Размер: " << transformed.matrix.rows() << " x " << transformed.matrix.cols() << "\n";
     }
 
     return 0;
