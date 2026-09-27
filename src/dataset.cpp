@@ -19,7 +19,7 @@ double quantile(const std::vector<double> &sorted_values, double p)
         return 0.0;
     }
 
-    double pos = 1 + (sorted_values.size() - 1) * p;
+    double pos = (sorted_values.size() - 1) * p;
 
     if (pos == std::floor(pos))
     {
@@ -44,7 +44,7 @@ double scale_value(double x, const NumericFeatureInfo &info, Scaling scaling)
         return (x - info.min) / denom;
     }
 
-    case Scaling::Robust:
+    case Scaling::Standard:
     {
         double std_dev = std::sqrt(info.variance);
         if (std_dev == 0.0)
@@ -52,7 +52,7 @@ double scale_value(double x, const NumericFeatureInfo &info, Scaling scaling)
         return (x - info.mean) / std_dev;
     }
 
-    case Scaling::Standart:
+    case Scaling::Robust:
     {
         double denom = info.q75 - info.q25;
         if (denom == 0.0)
@@ -337,7 +337,7 @@ void Dataset::print_summary(std::ostream &out) const
         }
         else
         {
-            type_str = "категоиальный";
+            type_str = "категориальный";
             const auto &cat_col = std::get<CategoricalColumn>(col);
 
             for (const auto &val : cat_col.values)
@@ -410,7 +410,7 @@ DatasetInfo Dataset::analyze() const
             }
             num_info.mean = sum / values.size();
 
-            double var_sum;
+            double var_sum = 0.0;
             for (const auto &val : values)
             {
                 double diff = num_info.mean - val;
@@ -500,14 +500,14 @@ void Dataset::impute(const DatasetInfo &info, NumericImputation strategy)
     }
 }
 
-TransformedDataset transform(const DatasetInfo &info, Scaling scaling, Encoding encoding,
-                             Layout layout = Layout::RowMajor) const
+TransformedDataset Dataset::transform(const DatasetInfo &info, Scaling scaling, Encoding encoding,
+                                      Layout layout) const
 {
     std::size_t num_rows = get_num_rows();
     std::vector<std::string> feature_names;
     std::vector<std::vector<double>> result_columns;
 
-    for (const auto &[name, cols] : columns_)
+    for (const auto &[name, col] : columns_)
     {
         const FeatureInfo &fi = info.at(name);
 
@@ -551,7 +551,7 @@ TransformedDataset transform(const DatasetInfo &info, Scaling scaling, Encoding 
     return TransformedDataset{std::move(matrix), std::move(feature_names)};
 }
 
-void print_numeric_histogram(std::span<const double> values, double min, double max, int num_bins = 10)
+void print_numeric_histogram(std::span<const double> values, double min, double max, int num_bins)
 {
     if (values.empty() || min == max)
     {
@@ -598,7 +598,7 @@ void print_categorical_histogram(const CategoricalFeatureInfo &cat_info)
         return;
     }
 
-    int max_freq = 0;
+    std::size_t max_freq = 0;
     for (const auto &[cat, freq] : cat_info.frequencies)
     {
         if (freq > max_freq)

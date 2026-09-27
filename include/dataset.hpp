@@ -1,4 +1,6 @@
+#pragma once
 #include "types.hpp"
+#include <span>
 #include <string>
 #include <vector>
 #include <optional>

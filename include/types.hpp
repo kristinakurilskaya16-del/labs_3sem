@@ -1,3 +1,4 @@
+#pragma once
 #include "matrix.hpp"
 #include <string>
 #include <vector>
@@ -5,6 +6,8 @@
 #include <variant>
 #include <unordered_map>
 #include <iostream>
+
+class Matrix;
 
 struct NumericColumn
 {
@@ -48,32 +51,6 @@ struct CategoricalFeatureInfo
 using FeatureInfo = std::variant<NumericFeatureInfo, CategoricalFeatureInfo>;
 
 using DatasetInfo = std::unordered_map<std::string, FeatureInfo>;
-
-enum class NumericImputation
-{
-    Mean,
-    Median,
-    Zero
-};
-
-enum class Scaling
-{
-    MinMax,
-    Standard,
-    Robust
-};
-
-enum class Encoding
-{
-    OneHot,
-    Ordinal
-};
-
-enum class Layout
-{
-    RowMajor,
-    ColumnMajor
-};
 
 struct TransformedDataset
 {

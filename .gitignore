@@ -1,3 +1,5 @@
-data/*.csv
+data/
 opencode.json
 *.o
+.vscode/
+build/

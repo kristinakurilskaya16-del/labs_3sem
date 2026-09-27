@@ -8,7 +8,7 @@
 int main()
 {
     Dataset dataset = load_dataset("data/data.csv");
-    dataset.print_summary(); 
+    dataset.print_summary();
 
     DatasetInfo info = dataset.analyze();
     std::vector<std::string> feature_names = dataset.get_feature_names();
@@ -20,7 +20,7 @@ int main()
         std::string input;
         std::getline(std::cin, input);
 
-        if (input.empty() && input.back() == '\r')
+        if (!input.empty() && input.back() == '\r')
         {
             input.pop_back();
         }

@@ -1,4 +1,5 @@
-#include "types.hpp"
+#pragma once
+#include "enums.hpp"
 #include <string>
 #include <vector>
 #include <optional>
@@ -25,7 +26,7 @@ private:
 public:
     Matrix() = default;
     Matrix(std::size_t rows, std::size_t cols, Layout layout)
-        : rows_(rows), cols_(cols), layout_(layout), data_(rows * cols, 0.0) {}
+        : data_(rows * cols, 0.0), rows_(rows), cols_(cols), layout_(layout) {}
 
     double &operator()(
         std::size_t row,
