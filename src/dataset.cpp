@@ -1,4 +1,5 @@
 #include "dataset.hpp"
+
 #include <string>
 #include <vector>
 #include <optional>
@@ -11,9 +12,15 @@
 #include <cmath>
 #include <algorithm>
 #include <ranges>
+#include <stdexcept>
 
-double quantile(const std::vector<double> &sorted_values, double p)
+double quantile(std::span<const double> sorted_values, double p)
 {
+    if (p < 0.0 || p > 1.0)
+    {
+        throw std::invalid_argument("Квантиль p должен находиться в диапазоне [0, 1]");
+    }
+
     if (sorted_values.empty())
     {
         return 0.0;
@@ -32,7 +39,10 @@ double quantile(const std::vector<double> &sorted_values, double p)
     return sorted_values[lo] + f * (sorted_values[lo + 1] - sorted_values[lo]);
 }
 
-double scale_value(double x, const NumericFeatureInfo &info, Scaling scaling)
+double scale_value(
+    double x,
+    const NumericFeatureInfo &info,
+    Scaling scaling)
 {
     switch (scaling)
     {
@@ -80,7 +90,7 @@ void encode_categorial(
     {
         for (const std::string &category : sorted_categories)
         {
-            std::vector<double> one_hot_column(num_rows, 0.0);
+            std::vector<double> one_hot_column(num_rows, 0.0); // один столбец
 
             for (std::size_t i = 0; i < num_rows; ++i)
             {
@@ -120,15 +130,37 @@ void encode_categorial(
     }
 }
 
-std::vector<std::string> Dataset::get_feature_names() const
+void Dataset::add_column(const std::string &name, const Column &col)
 {
-    std::vector<std::string> names;
-
-    for (const auto &[name, col] : columns_)
+    if (name.empty())
     {
-        names.push_back(name);
+        throw std::runtime_error("Нельзя добавить столбец с пустым именем");
     }
-    return names;
+
+    if (columns_.contains(name)) // защита от порторов
+    {
+        throw std::runtime_error("Дублирующееся имя столбца: " + name);
+    }
+
+    std::size_t new_size = 0;
+
+    if (std::holds_alternative<NumericColumn>(col))
+    {
+        new_size = std::get<NumericColumn>(col).values.size();
+    }
+    else
+    {
+        new_size =
+            std::get<CategoricalColumn>(col).values.size();
+    }
+
+    if (!columns_.empty() && new_size != get_num_rows())
+    {
+        throw std::runtime_error("Все столбцы должны содержать одинаковое число строк");
+    }
+
+    columns_.emplace(name, col);
+    feature_order_.push_back(name);
 }
 
 std::size_t Dataset::get_num_rows() const
@@ -138,7 +170,7 @@ std::size_t Dataset::get_num_rows() const
         return 0;
     }
 
-    const auto &first_col = columns_.begin()->second; // begin - ключ, second - значение
+    const auto &first_col = columns_.begin()->second;
 
     if (std::holds_alternative<NumericColumn>(first_col))
     {
@@ -180,7 +212,8 @@ Dataset load_dataset(
     char delimiter,
     const std::string &missing_marker)
 {
-    std::ifstream file(filepath); // почитать
+    std::ifstream file(filepath);
+
     if (!file.is_open())
     {
         throw std::runtime_error("Не удалось открыть файл: " + filepath.string());
@@ -210,7 +243,7 @@ Dataset load_dataset(
 
     std::size_t current_row = 1;
 
-    while (getline(file, line))
+    while (std::getline(file, line))
     {
         if (line.empty())
         {
@@ -226,14 +259,14 @@ Dataset load_dataset(
 
         if (tokens.size() != num_cols)
         {
-            throw std::runtime_error("Ошибка в строке" + std::to_string(current_row + 1) +
-                                     "ожидалось " + std::to_string(num_cols) +
-                                     "полей, найдено" + std::to_string(tokens.size()));
+            throw std::runtime_error("Ошибка в строке " + std::to_string(current_row + 1) +
+                                     ": ожидалось " + std::to_string(num_cols) +
+                                     " полей, найдено " + std::to_string(tokens.size()));
         }
 
         for (std::size_t j = 0; j < num_cols; ++j)
         {
-            raw_columns[j].push_back(tokens[j]);
+            raw_columns[j].push_back(tokens[j]); // 2-ое значение в конец 2-ой строки
         }
 
         current_row++;
@@ -243,8 +276,14 @@ Dataset load_dataset(
 
     for (std::size_t j = 0; j < num_cols; ++j)
     {
-        const std::string &col_name = headers[j];
-        const auto &raw_data = raw_columns[j];
+        std::string col_name = strip_quotes(headers[j]);
+
+        if (col_name.empty())
+        {
+            col_name = "id"; // в дальнейшем этот столбец вообще не должен играть роль и его не надо учитывать
+        }
+
+        const auto &raw_data = raw_columns[j]; // один столбец
 
         bool is_numeric = true;
 
@@ -255,10 +294,10 @@ Dataset load_dataset(
                 continue;
             }
 
-            double test;
+            double test = 0.0; // std::from_chars сюда запишет преобразование
             auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), test);
 
-            if (ec != std::errc{} || ptr != val.data() + val.size())
+            if (ec != std::errc{} || ptr != val.data() + val.size()) // нулевой код ошибки и указатель на последний символ
             {
                 is_numeric = false;
                 break;
@@ -277,8 +316,16 @@ Dataset load_dataset(
                 }
                 else
                 {
-                    double parsed;
-                    std::from_chars(val.data(), val.data() + val.size(), parsed);
+                    double parsed = 0.0;
+                    auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), parsed);
+
+                    if (ec != std::errc{} ||
+                        ptr != val.data() + val.size())
+                    {
+                        throw std::runtime_error("Ошибка разбора числового значения '" +
+                                                 val + "' в столбце '" + col_name + "'");
+                    }
+
                     num_col.values.push_back(parsed);
                 }
             }
@@ -307,18 +354,27 @@ Dataset load_dataset(
 
 void Dataset::print_summary(std::ostream &out) const
 {
-    out << std::format("Объектов: {}\n", get_num_rows());
-    out << std::format("Признаков: {}\n\n", columns_.size());
-
-    out << std::format("{:>4}{:<20}{:<30}{:^20}\n", "#", "Признак", "Тип", "Пропуски");
-
-    std::size_t index = 0;
-    std::size_t total_missing = 0;
-    std::size_t cols_with_missing = 0;
     std::size_t num_rows = get_num_rows();
 
-    for (const auto &[name, col] : columns_)
+    if (num_rows == 0)
     {
+        out << "Датасет пуст: нет объектов для отображения.\n";
+        return;
+    }
+
+    out << std::format("Объектов: {}\n", num_rows);
+    out << std::format("Признаков: {}\n\n", feature_order_.size());
+
+    out << std::format("{:>4} {:<28}{:<20}{:>18}\n", "#", "Признак", "Тип", "Пропуски");
+
+    std::size_t total_missing = 0;
+    std::size_t cols_with_missing = 0;
+
+    for (std::size_t index = 0; index < feature_order_.size(); ++index)
+    {
+        const std::string &name = feature_order_[index];
+        const Column &col = columns_.at(name);
+
         std::string type_str;
         std::size_t missing_count = 0;
 
@@ -349,20 +405,21 @@ void Dataset::print_summary(std::ostream &out) const
             }
         }
 
+        std::string missing_str;
         if (missing_count > 0)
         {
-            double result = 100.0 * missing_count / num_rows;
-            out << std::format("{:>4}{:<20}{:<30} {} ({:.1f}%)\n",
-                               index, name, type_str, missing_count, result);
+            double result = 100.0 * static_cast<double>(missing_count) /
+                            static_cast<double>(num_rows);
+            missing_str = std::format("{:>10} ({:.1f}%)", missing_count, result);
             total_missing += missing_count;
             cols_with_missing++;
         }
         else
         {
-            out << std::format("{:>4}{:<20}{:<30}{:^20}\n", index, name, type_str, 0);
+            missing_str = std::format("{:>10}", "0");
         }
 
-        index++;
+        out << std::format("{:>4} {:<20}{:<20}{}\n", index, name, type_str, missing_str);
     }
 
     out << std::format("\nВсего пропусков: {} в {} признаках\n", total_missing, cols_with_missing);
@@ -377,9 +434,9 @@ DatasetInfo Dataset::analyze() const
         if (std::holds_alternative<NumericColumn>(col))
         {
             const auto &num_col = std::get<NumericColumn>(col);
-            NumericFeatureInfo num_info;
+            NumericFeatureInfo num_info{};
 
-            std::vector<double> values;
+            std::vector<double> values; // "чистый" столбец
 
             for (const auto &val : num_col.values)
             {
@@ -431,7 +488,7 @@ DatasetInfo Dataset::analyze() const
         else
         {
             const auto &cat_col = std::get<CategoricalColumn>(col);
-            CategoricalFeatureInfo cat_info;
+            CategoricalFeatureInfo cat_info{};
 
             for (const auto &val : cat_col.values)
             {
@@ -439,6 +496,7 @@ DatasetInfo Dataset::analyze() const
                 {
                     const std::string &s = *val;
                     cat_info.frequencies[s]++;
+
                     if (cat_info.frequencies[s] == 1)
                     {
                         cat_info.categories.push_back(s);
@@ -500,15 +558,19 @@ void Dataset::impute(const DatasetInfo &info, NumericImputation strategy)
     }
 }
 
-TransformedDataset Dataset::transform(const DatasetInfo &info, Scaling scaling, Encoding encoding,
-                                      Layout layout) const
+TransformedDataset Dataset::transform(
+    const DatasetInfo &info,
+    Scaling scaling,
+    Encoding encoding,
+    Layout layout) const
 {
     std::size_t num_rows = get_num_rows();
-    std::vector<std::string> feature_names;
+    std::vector<std::string> feature_names; // новые названия столбцов при one hot
     std::vector<std::vector<double>> result_columns;
 
-    for (const auto &[name, col] : columns_)
+    for (const std::string &name : feature_order_)
     {
+        const Column &col = columns_.at(name);
         const FeatureInfo &fi = info.at(name);
 
         if (std::holds_alternative<NumericColumn>(col))
@@ -516,7 +578,7 @@ TransformedDataset Dataset::transform(const DatasetInfo &info, Scaling scaling, 
             const auto &num_col = std::get<NumericColumn>(col);
             const auto &num_info = std::get<NumericFeatureInfo>(fi);
 
-            std::vector<double> scaled_values(num_rows);
+            std::vector<double> scaled_values(num_rows); // преобразованный
 
             for (std::size_t i = 0; i < num_rows; ++i)
             {
@@ -535,6 +597,12 @@ TransformedDataset Dataset::transform(const DatasetInfo &info, Scaling scaling, 
             const auto &cat_info = std::get<CategoricalFeatureInfo>(fi);
 
             std::vector<std::string> sorted_categories = cat_info.categories;
+
+            if (cat_info.missing_count > 0)
+            {
+                sorted_categories.push_back("__MISSING__");
+            }
+
             std::sort(sorted_categories.begin(), sorted_categories.end());
 
             encode_categorial(cat_col.values, sorted_categories, encoding, name, result_columns, feature_names);
@@ -551,8 +619,19 @@ TransformedDataset Dataset::transform(const DatasetInfo &info, Scaling scaling, 
     return TransformedDataset{std::move(matrix), std::move(feature_names)};
 }
 
-void print_numeric_histogram(std::span<const double> values, double min, double max, int num_bins)
+void print_numeric_histogram(
+    std::span<const double> values,
+    double min,
+    double max,
+    int num_bins)
 {
+    if (num_bins <= 0)
+    {
+        std::cout
+            << "Число интервалов должно быть положительным.\n";
+        return;
+    }
+
     if (values.empty() || min == max)
     {
         std::cout << "Невозможно построить гистограмму.";
@@ -561,11 +640,11 @@ void print_numeric_histogram(std::span<const double> values, double min, double 
 
     double bin_width = (max - min) / num_bins;
 
-    std::vector<int> counts(num_bins, 0); // (размер, начальное значение)
+    std::vector<int> counts(num_bins, 0);
 
     for (double v : values)
     {
-        int bin = static_cast<int>((v - min) / bin_width); // смещаем минимум -> 0
+        int bin = static_cast<int>((v - min) / bin_width); // -> номер интервала
 
         if (bin >= num_bins)
         {
@@ -618,7 +697,12 @@ void print_categorical_histogram(const CategoricalFeatureInfo &cat_info)
     }
 }
 
-void print_numeric_info(std::size_t index, const std::string &name, const NumericFeatureInfo &info, std::span<const double> clean_values)
+void print_numeric_info(
+    std::size_t index,
+    const std::string &name,
+    const NumericFeatureInfo &info,
+    std::span<const double> clean_values,
+    int num_bins)
 {
     std::cout << std::format("\nПризнак {}: {} (числовой)\n", index, name);
     std::cout << std::format("  пропусков: {}\n", info.missing_count);
@@ -638,10 +722,13 @@ void print_numeric_info(std::size_t index, const std::string &name, const Numeri
     std::cout << std::format("  q95: {:.3f}\n", info.q95);
 
     std::cout << "\n  Гистограмма:\n";
-    print_numeric_histogram(clean_values, info.min, info.max, 10);
+    print_numeric_histogram(clean_values, info.min, info.max, num_bins);
 }
 
-void print_categorical_info(std::size_t index, const std::string &name, const CategoricalFeatureInfo &info)
+void print_categorical_info(
+    std::size_t index,
+    const std::string &name,
+    const CategoricalFeatureInfo &info)
 {
     std::cout << std::format("\nПризнак {}: {} (категориальный)\n", index, name);
     std::cout << std::format("  пропусков: {}\n", info.missing_count);

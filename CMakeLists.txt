@@ -23,13 +23,17 @@ add_executable(app
 target_link_libraries(app PRIVATE core)
 target_compile_options(app PRIVATE -Wall -Wextra)
 
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+
 add_executable(tests
     tests/tests.cpp
 )
 
 target_link_libraries(tests PRIVATE core)
 target_compile_options(tests PRIVATE -Wall -Wextra)
-target_compile_definitions(tests PRIVATE NDEBUG=0)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(tests PRIVATE -UNDEBUG)
+endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(core PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)

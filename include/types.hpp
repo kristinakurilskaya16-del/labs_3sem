@@ -1,13 +1,12 @@
 #pragma once
+
 #include "matrix.hpp"
+
 #include <string>
 #include <vector>
 #include <optional>
 #include <variant>
 #include <unordered_map>
-#include <iostream>
-
-class Matrix;
 
 struct NumericColumn
 {
@@ -23,29 +22,29 @@ using Column = std::variant<NumericColumn, CategoricalColumn>;
 
 struct NumericFeatureInfo
 {
-    std::size_t missing_count;
+    std::size_t missing_count = 0;
 
-    double min;
-    double max;
+    double min = 0.0;
+    double max = 0.0;
 
-    double mean;
-    double variance;
+    double mean = 0.0;
+    double variance = 0.0;
 
-    double median;
+    double median = 0.0;
 
-    double q05;
-    double q25;
-    double q75;
-    double q95;
+    double q05 = 0.0;
+    double q25 = 0.0;
+    double q75 = 0.0;
+    double q95 = 0.0;
 };
 
 struct CategoricalFeatureInfo
 {
-    std::size_t missing_count;
+    std::size_t missing_count = 0;
 
     std::vector<std::string> categories;
 
-    std::unordered_map<std::string, std::size_t> frequencies;
+    std::unordered_map<std::string, std::size_t> frequencies; // для гистограммы
 };
 
 using FeatureInfo = std::variant<NumericFeatureInfo, CategoricalFeatureInfo>;

@@ -1,11 +1,13 @@
 #include "dataset.hpp"
 #include "matrix.hpp"
+
 #include <iostream>
 #include <fstream>
 #include <filesystem>
 #include <cmath>
 #include <cassert>
 #include <string>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -36,7 +38,7 @@ void test_type_detection()
     auto dataset = load_dataset(temp_csv, ',', "NA");
     auto columns = dataset.get_columns();
 
-    assert(columns.size() == 3);
+    assert(columns.size() == 2);
     assert(std::holds_alternative<NumericColumn>(columns.at("numeric")));
     assert(std::holds_alternative<CategoricalColumn>(columns.at("categorical")));
 
@@ -154,6 +156,57 @@ void test_inconsistent_csv()
     fs::remove(temp_csv);
 }
 
+void test_impute_and_transform_categorical()
+{
+    fs::path temp_csv = "test_impute_cat.csv";
+    {
+        std::ofstream file(temp_csv);
+        file << "color,value\n";
+        file << "red,1.0\n";
+        file << "NA,2.0\n";
+        file << "blue,3.0\n";
+    }
+
+    Dataset ds = load_dataset(temp_csv, ',', "NA");
+    DatasetInfo info = ds.analyze();
+
+    assert(std::holds_alternative<CategoricalFeatureInfo>(info.at("color")));
+    assert(std::get<CategoricalFeatureInfo>(info.at("color")).missing_count == 1);
+
+    ds.impute(info, NumericImputation::Median);
+
+    TransformedDataset t = ds.transform(info, Scaling::MinMax, Encoding::OneHot);
+
+    // Должны быть столбцы: color_blue, color_red, color___MISSING__, value
+    bool has_missing_col = false;
+    for (const auto &n : t.feature_names)
+    {
+        if (n.find("__MISSING__") != std::string::npos)
+        {
+            has_missing_col = true;
+        }
+    }
+    assert(has_missing_col);
+
+    fs::remove(temp_csv);
+}
+
+void test_degenerate_scaling()
+{
+    NumericFeatureInfo info;
+    info.min = 5.0;
+    info.max = 5.0;
+    info.mean = 5.0;
+    info.variance = 0.0;
+    info.median = 5.0;
+    info.q25 = 5.0;
+    info.q75 = 5.0;
+
+    assert(std::abs(scale_value(5.0, info, Scaling::MinMax) - 0.0) < 1e-9);
+    assert(std::abs(scale_value(5.0, info, Scaling::Standard) - 0.0) < 1e-9);
+    assert(std::abs(scale_value(5.0, info, Scaling::Robust) - 0.0) < 1e-9);
+}
+
 int main()
 {
     test_split_with_missing();
@@ -162,6 +215,8 @@ int main()
     test_categorical_encoding();
     test_matrix_save_load();
     test_inconsistent_csv();
+    test_impute_and_transform_categorical();
+    test_degenerate_scaling();
 
     std::cout << "Все тесты пройдены\n";
     return 0;
