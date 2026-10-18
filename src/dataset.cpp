@@ -135,6 +135,7 @@ void Dataset::add_column(const std::string &name, const Column &col)
     if (name.empty())
     {
         throw std::runtime_error("Нельзя добавить столбец с пустым именем");
+        // todo: раскрутка стека
     }
 
     if (columns_.contains(name)) // защита от порторов
@@ -283,7 +284,12 @@ Dataset load_dataset(
             col_name = "id"; // в дальнейшем этот столбец вообще не должен играть роль и его не надо учитывать
         }
 
-        const auto &raw_data = raw_columns[j]; // один столбец
+        auto &raw_data = raw_columns[j]; // один столбец
+
+        for (std::string &value : raw_data)
+        {
+            value = strip_quotes(value);
+        }
 
         bool is_numeric = true;
 

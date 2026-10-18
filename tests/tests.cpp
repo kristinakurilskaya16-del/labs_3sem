@@ -45,6 +45,35 @@ void test_type_detection()
     fs::remove(temp_csv);
 }
 
+void test_quoted_csv_fields()
+{
+    const fs::path temp_csv = "test_quoted_csv_fields.csv";
+    {
+        std::ofstream file(temp_csv);
+        assert(file.is_open());
+        file << "\"age\",\"sex\"\n";
+        file << "\"42\",\"m\"\n";
+        file << "\"NA\",\"NA\"\n";
+    }
+
+    const auto dataset = load_dataset(temp_csv);
+    const auto &columns = dataset.get_columns();
+    assert(dataset.get_num_rows() == 2);
+    assert(columns.size() == 2);
+    assert(std::holds_alternative<NumericColumn>(columns.at("age")));
+    assert(std::holds_alternative<CategoricalColumn>(columns.at("sex")));
+
+    const auto &ages = std::get<NumericColumn>(columns.at("age")).values;
+    const auto &sexes = std::get<CategoricalColumn>(columns.at("sex")).values;
+    assert(ages.size() == 2 && sexes.size() == 2);
+    assert(ages[0].has_value() && *ages[0] == 42.0);
+    assert(sexes[0].has_value() && *sexes[0] == "m");
+    assert(!ages[1].has_value());
+    assert(!sexes[1].has_value());
+
+    fs::remove(temp_csv);
+}
+
 void test_quantile()
 {
     std::vector<double> values = {1.0, 2.0, 3.0, 4.0, 5.0};
@@ -211,6 +240,7 @@ int main()
 {
     test_split_with_missing();
     test_type_detection();
+    test_quoted_csv_fields();
     test_quantile();
     test_categorical_encoding();
     test_matrix_save_load();

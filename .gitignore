@@ -3,3 +3,4 @@ opencode.json
 *.o
 .vscode/
 build/
+build-codex/
