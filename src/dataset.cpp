@@ -13,6 +13,10 @@
 #include <algorithm>
 #include <ranges>
 #include <stdexcept>
+#include <cstddef>
+#include <utility>
+#include <numeric>
+#include <random>
 
 double quantile(std::span<const double> sorted_values, double p)
 {
@@ -68,6 +72,11 @@ double scale_value(
         if (denom == 0.0)
             return 0.0;
         return (x - info.median) / denom;
+    }
+
+    case Scaling::None:
+    {
+        return x;
     }
     }
 
@@ -570,12 +579,45 @@ TransformedDataset Dataset::transform(
     Encoding encoding,
     Layout layout) const
 {
+    std::unordered_set<std::string> all_columns(
+        feature_order_.begin(),
+        feature_order_.end());
+
+    return transform(info, scaling, encoding, layout, all_columns);
+}
+
+TransformedDataset Dataset::transform(
+    const DatasetInfo &info,
+    Scaling scaling,
+    Encoding encoding,
+    Layout layout,
+    const std::unordered_set<std::string> &included_columns) const
+{
+
+    if (included_columns.empty())
+    {
+        throw std::invalid_argument("Не выбраны столбцы для преобразования");
+    }
+
+    for (const std::string &name : included_columns)
+    {
+        if (!columns_.contains(name))
+        {
+            throw std::invalid_argument("Столбец не найден: " + name);
+        }
+    }
+
     std::size_t num_rows = get_num_rows();
     std::vector<std::string> feature_names; // новые названия столбцов при one hot
     std::vector<std::vector<double>> result_columns;
 
     for (const std::string &name : feature_order_)
     {
+        if (!included_columns.contains(name))
+        {
+            continue;
+        }
+
         const Column &col = columns_.at(name);
         const FeatureInfo &fi = info.at(name);
 
@@ -623,6 +665,119 @@ TransformedDataset Dataset::transform(
             matrix(i, j) = result_columns[j][i];
 
     return TransformedDataset{std::move(matrix), std::move(feature_names)};
+}
+
+template <typename T>
+std::pair<T, T> split_column(
+    const T &source_column,
+    std::size_t train_rows,
+    const std::vector<std::size_t> &indices)
+{
+    T train_column;
+    T test_column;
+
+    for (std::size_t i = 0; i < train_rows; ++i)
+    {
+        train_column.values.push_back(source_column.values[indices[i]]);
+    }
+
+    for (std::size_t i = train_rows; i < indices.size(); ++i)
+    {
+        test_column.values.push_back(source_column.values[indices[i]]);
+    }
+
+    return {
+        std::move(train_column),
+        std::move(test_column)};
+}
+
+std::pair<Dataset, Dataset> Dataset::split(double train_ratio) const
+{
+    if (!(train_ratio > 0.0 && train_ratio < 1.0))
+    {
+        throw std::invalid_argument(
+            "Доля обучающей выборки должна быть больше 0 и меньше 1");
+    }
+
+    if (feature_order_.empty())
+    {
+        throw std::runtime_error(
+            "Невозможно разделить датасет без столбцов");
+    }
+
+    const Column &first_column = columns_.at(feature_order_.front());
+
+    std::size_t total_rows = 0;
+
+    if (std::holds_alternative<NumericColumn>(first_column))
+    {
+        total_rows = std::get<NumericColumn>(first_column).values.size();
+    }
+    else
+    {
+        total_rows = std::get<CategoricalColumn>(first_column).values.size();
+    }
+
+    const std::size_t train_rows = static_cast<std::size_t>(total_rows * train_ratio);
+
+    if (train_rows == 0 || train_rows == total_rows)
+    {
+        throw std::invalid_argument(
+            "При заданной пропорции одна из выборок получается пустой");
+    }
+
+    std::vector<std::size_t> indices(total_rows);
+
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::mt19937 generator(50);
+    std::shuffle(indices.begin(), indices.end(), generator);
+
+    Dataset train_dataset;
+    Dataset test_dataset;
+
+    train_dataset.feature_order_ = feature_order_;
+    test_dataset.feature_order_ = feature_order_;
+
+    for (const auto &name : feature_order_)
+    {
+        const Column &column = columns_.at(name);
+
+        if (std::holds_alternative<NumericColumn>(column))
+        {
+            const NumericColumn &source = std::get<NumericColumn>(column);
+
+            if (source.values.size() != total_rows)
+            {
+                throw std::runtime_error(
+                    "Столбцы датасета имеют разное количество строк");
+            }
+
+            auto [train_column, test_column] = split_column(source, train_rows, indices);
+
+            train_dataset.columns_.emplace(name, std::move(train_column));
+
+            test_dataset.columns_.emplace(name, std::move(test_column));
+        }
+        else
+        {
+            const CategoricalColumn &source = std::get<CategoricalColumn>(column);
+
+            if (source.values.size() != total_rows)
+            {
+                throw std::runtime_error(
+                    "Столбцы датасета имеют разное количество строк");
+            }
+
+            auto [train_column, test_column] = split_column(source, train_rows, indices);
+
+            train_dataset.columns_.emplace(name, std::move(train_column));
+
+            test_dataset.columns_.emplace(name, std::move(test_column));
+        }
+    }
+
+    return {std::move(train_dataset), std::move(test_dataset)};
 }
 
 void print_numeric_histogram(

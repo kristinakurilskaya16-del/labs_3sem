@@ -1,6 +1,18 @@
 #include "matrix.hpp"
 
 #include <fstream>
+#include <stdexcept>
+#include <string>
+
+std::size_t Matrix::index(std::size_t row, std::size_t col) const
+{
+    if (layout_ == Layout::RowMajor)
+    {
+        return row * cols_ + col;
+    }
+
+    return col * rows_ + row;
+}
 
 double &Matrix::operator()(std::size_t row, std::size_t col)
 {
@@ -30,6 +42,60 @@ const double &Matrix::operator()(std::size_t row, std::size_t col) const
     }
 
     return data_[col * rows_ + row];
+}
+
+std::span<double> Matrix::operator[](std::size_t row)
+{
+    if (layout_ != Layout::RowMajor)
+    {
+        throw std::runtime_error(
+            "Matrix::operator[]: доступен только для RowMajor layout");
+    }
+
+    return {data_.data() + row * cols_, cols_};
+}
+
+std::span<const double> Matrix::operator[](std::size_t row) const
+{
+    if (layout_ != Layout::RowMajor)
+    {
+        throw std::runtime_error(
+            "Matrix::operator[]: доступен только для RowMajor layout");
+    }
+
+    return {data_.data() + row * cols_, cols_};
+}
+
+double &Matrix::at(std::size_t row, std::size_t col)
+{
+    if (row >= rows_ || col >= cols_)
+    {
+        throw std::out_of_range(
+            "Matrix::at: индекс (" + 
+            std::to_string(row) + ", " +
+            std::to_string(col) +
+            ") вне диапазона [" +
+            std::to_string(rows_) + " x " +
+            std::to_string(cols_) + "]");
+    }
+
+    return data_[index(row, col)];
+}
+
+const double &Matrix::at(std::size_t row, std::size_t col) const
+{
+    if (row >= rows_ || col >= cols_)
+    {
+        throw std::out_of_range(
+            "Matrix::at: индекс (" +
+            std::to_string(row) + ", " +
+            std::to_string(col) +
+            ") вне диапазона [" +
+            std::to_string(rows_) + " x " +
+            std::to_string(cols_) + "]");
+    }
+
+    return data_[index(row, col)];
 }
 
 void Matrix::save(const std::filesystem::path &path) const

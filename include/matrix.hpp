@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <span>
 
 class Matrix
 {
@@ -15,6 +16,8 @@ private:
     std::size_t cols_ = 0;
 
     Layout layout_ = Layout::RowMajor;
+
+    std::size_t index(std::size_t row, std::size_t col) const;
 
 public:
     Matrix() = default;
@@ -29,6 +32,14 @@ public:
     const double &operator()(
         std::size_t row,
         std::size_t column) const;
+
+    std::span<double> operator[](std::size_t row);
+
+    std::span<const double> operator[](std::size_t row) const;
+
+    double &at(std::size_t row, std::size_t col);
+
+    const double &at(std::size_t row, std::size_t col) const;
 
     std::size_t rows() const { return rows_; }
     std::size_t cols() const { return cols_; }

@@ -6,8 +6,10 @@
 #include <optional>
 #include <variant>
 #include <unordered_map>
+#include <unordered_set>
 #include <filesystem>
 #include <iostream>
+#include <utility>
 
 class Dataset
 {
@@ -36,6 +38,15 @@ public:
         Scaling scaling,
         Encoding encoding,
         Layout layout = Layout::RowMajor) const;
+
+    TransformedDataset transform(
+        const DatasetInfo &info,
+        Scaling scaling,
+        Encoding encoding,
+        Layout layout,
+        const std::unordered_set<std::string> &included_columns) const;
+
+    std::pair<Dataset, Dataset> split(double train_ratio) const;
 
     std::vector<std::string> get_feature_names() const
     {

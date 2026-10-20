@@ -9,6 +9,7 @@ enum class NumericImputation
 
 enum class Scaling
 {
+    None,
     MinMax,
     Standard,
     Robust
