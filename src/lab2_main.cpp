@@ -1,4 +1,5 @@
 #include "dataset.hpp"
+#include "decision_stump.hpp"
 
 #include <iostream>
 #include <string>
@@ -112,6 +113,27 @@ int main()
 
     Matrix X_train = std::move(transformed_train.matrix);
     Matrix X_test = std::move(transformed_test.matrix);
+
+    DecisionStump model(SplitCriterion::Gini, 1);
+
+    model.fit(X_train, y_train);
+
+    std::vector<double> predictions = model.predict(X_test);
+
+    std::size_t correct = 0;
+
+    for (std::size_t i = 0; i < y_test.size(); ++i)
+    {
+        if (predictions[i] == y_test[i])
+        {
+            ++correct;
+        }
+    }
+
+    double accuracy =
+        static_cast<double>(correct) / y_test.size();
+
+    std::cout << "Accuracy: " << accuracy << '\n';
 
     return 0;
 }

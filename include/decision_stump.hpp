@@ -27,6 +27,7 @@ private:
 
     std::size_t n_features_ = 0;
     bool is_fitted_ = false;
+    bool has_split_ = false;
 
 public:
     DecisionStump(SplitCriterion criterion, std::size_t min_samples_leaf)
@@ -42,6 +43,7 @@ public:
 
     std::size_t split_feature() const { return feature_index_; }
     double split_threshold() const { return threshold_; }
+    bool has_split() const { return has_split_; }
 
     double left_value() const { return left_value_; }
     double right_value() const { return right_value_; }
