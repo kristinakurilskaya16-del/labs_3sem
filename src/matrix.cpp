@@ -71,7 +71,7 @@ double &Matrix::at(std::size_t row, std::size_t col)
     if (row >= rows_ || col >= cols_)
     {
         throw std::out_of_range(
-            "Matrix::at: индекс (" + 
+            "Matrix::at: индекс (" +
             std::to_string(row) + ", " +
             std::to_string(col) +
             ") вне диапазона [" +

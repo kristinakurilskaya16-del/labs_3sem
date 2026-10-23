@@ -61,3 +61,22 @@ endif()
 
 enable_testing()
 add_test(NAME unit COMMAND tests)
+
+# Документация не входит в обычную сборку и не требует Graphviz.
+find_package(Doxygen QUIET)
+if(DOXYGEN_FOUND)
+    configure_file(Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile @ONLY)
+    add_custom_target(docs
+        COMMAND Doxygen::doxygen ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMENT "Generating HTML documentation with Doxygen"
+        VERBATIM
+    )
+else()
+    message(STATUS "Doxygen not found: install it with 'sudo apt install doxygen' to build HTML documentation; app, lab2 and tests remain available.")
+    add_custom_target(docs
+        COMMAND ${CMAKE_COMMAND} -E echo "Doxygen is required for docs. Install: sudo apt install doxygen. Then configure CMake again."
+        COMMAND ${CMAKE_COMMAND} -E false
+        VERBATIM
+    )
+endif()

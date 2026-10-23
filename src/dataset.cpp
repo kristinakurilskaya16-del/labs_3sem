@@ -593,7 +593,6 @@ TransformedDataset Dataset::transform(
     Layout layout,
     const std::unordered_set<std::string> &included_columns) const
 {
-
     if (included_columns.empty())
     {
         throw std::invalid_argument("Не выбраны столбцы для преобразования");
@@ -686,9 +685,7 @@ std::pair<T, T> split_column(
         test_column.values.push_back(source_column.values[indices[i]]);
     }
 
-    return {
-        std::move(train_column),
-        std::move(test_column)};
+    return {std::move(train_column), std::move(test_column)};
 }
 
 std::pair<Dataset, Dataset> Dataset::split(double train_ratio) const

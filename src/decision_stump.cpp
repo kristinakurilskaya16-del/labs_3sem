@@ -41,7 +41,7 @@ void DecisionStump::fit(const Matrix &features, std::span<const double> target)
     double total_sum = 0.0;
 
     std::vector<double> classes;                         // уникальные значения
-    std::vector<std::size_t> class_indices(num_samples); // объект -> класс
+    std::vector<std::size_t> class_indices(num_samples); // объект -> индекс в классе
     std::vector<std::size_t> class_counts;
 
     if (criterion_ == SplitCriterion::Variance)
@@ -178,14 +178,7 @@ void DecisionStump::fit(const Matrix &features, std::span<const double> target)
             {
                 best_score = score;
                 feature_index_ = j;
-                double threshold = std::midpoint(current_value, next_value);
-
-                if (threshold >= next_value)
-                {
-                    threshold = current_value;
-                }
-
-                threshold_ = threshold;
+                threshold_ = std::midpoint(current_value, next_value);
                 has_split_ = true;
             }
         }
@@ -202,6 +195,7 @@ void DecisionStump::fit(const Matrix &features, std::span<const double> target)
         {
             double left_sum = 0.0;
             double right_sum = 0.0;
+
             std::size_t left_count = 0;
             std::size_t right_count = 0;
 

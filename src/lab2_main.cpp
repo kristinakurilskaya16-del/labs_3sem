@@ -28,6 +28,7 @@ int main()
     }
 
     std::unordered_map<std::string, double> label_to_number;
+    std::vector<std::string> number_to_label;
 
     std::vector<double> y_train;
     std::vector<double> y_test;
@@ -56,6 +57,7 @@ int main()
         {
             double label = static_cast<double>(label_to_number.size());
             label_to_number.emplace(name, label);
+            number_to_label.push_back(name);
         }
 
         y_train.push_back(label_to_number.at(name));
@@ -81,14 +83,13 @@ int main()
     }
 
     auto train_info = train_dataset.analyze();
-    auto test_info = test_dataset.analyze();
 
     train_dataset.impute(
         train_info,
         NumericImputation::Median);
 
     test_dataset.impute(
-        test_info,
+        train_info,
         NumericImputation::Median);
 
     auto transformed_train = train_dataset.transform(
@@ -120,20 +121,42 @@ int main()
 
     std::vector<double> predictions = model.predict(X_test);
 
-    std::size_t correct = 0;
-
-    for (std::size_t i = 0; i < y_test.size(); ++i)
+    if (model.has_split())
     {
-        if (predictions[i] == y_test[i])
-        {
-            ++correct;
-        }
+        std::size_t feature = model.split_feature();
+
+        std::cout << "Выбранный признак: "
+                  << transformed_train.feature_names[feature] << '\n';
+
+        std::cout << "Порог разбиения: "
+                  << model.split_threshold() << '\n';
+    }
+    else
+    {
+        std::cout << "Допустимое разбиение не найдено\n";
     }
 
-    double accuracy =
-        static_cast<double>(correct) / y_test.size();
+    std::cout << "Значение левого листа: "
+              << number_to_label[static_cast<std::size_t>(model.left_value())]
+              << '\n';
 
-    std::cout << "Accuracy: " << accuracy << '\n';
+    std::cout << "Значение правого листа: "
+              << number_to_label[static_cast<std::size_t>(model.right_value())]
+              << '\n';
+
+    std::cout << "\nПредсказания на тестовой выборке:\n";
+
+    for (std::size_t i = 0;
+         i < std::min<std::size_t>(5, predictions.size());
+         ++i)
+    {
+        std::cout << "Объект " << i
+                  << ": предсказание = "
+                  << number_to_label[static_cast<std::size_t>(predictions[i])]
+                  << ", правильный ответ = "
+                  << number_to_label[static_cast<std::size_t>(y_test[i])]
+                  << '\n';
+    }
 
     return 0;
 }
