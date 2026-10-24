@@ -115,7 +115,12 @@ int main()
     Matrix X_train = std::move(transformed_train.matrix);
     Matrix X_test = std::move(transformed_test.matrix);
 
-    DecisionStump model(SplitCriterion::Gini, 1);
+#ifdef LAB2_VARIANCE
+    constexpr auto criterion = SplitCriterion::Variance;
+#else
+    constexpr auto criterion = SplitCriterion::Gini;
+#endif
+    DecisionStump model(criterion, 1);
 
     model.fit(X_train, y_train);
 
@@ -136,13 +141,21 @@ int main()
         std::cout << "Допустимое разбиение не найдено\n";
     }
 
-    std::cout << "Значение левого листа: "
-              << number_to_label[static_cast<std::size_t>(model.left_value())]
-              << '\n';
+    const auto print_value = [&](double value)
+    {
+        if constexpr (criterion == SplitCriterion::Gini)
+            std::cout << number_to_label[static_cast<std::size_t>(value)];
+        else
+            std::cout << value;
+    };
 
-    std::cout << "Значение правого листа: "
-              << number_to_label[static_cast<std::size_t>(model.right_value())]
-              << '\n';
+    std::cout << "Значение левого листа: ";
+    print_value(model.left_value());
+    std::cout << '\n';
+
+    std::cout << "Значение правого листа: ";
+    print_value(model.right_value());
+    std::cout << '\n';
 
     std::cout << "\nПредсказания на тестовой выборке:\n";
 
@@ -150,12 +163,11 @@ int main()
          i < std::min<std::size_t>(5, predictions.size());
          ++i)
     {
-        std::cout << "Объект " << i
-                  << ": предсказание = "
-                  << number_to_label[static_cast<std::size_t>(predictions[i])]
-                  << ", правильный ответ = "
-                  << number_to_label[static_cast<std::size_t>(y_test[i])]
-                  << '\n';
+        std::cout << "Объект " << i << ": предсказание = ";
+        print_value(predictions[i]);
+        std::cout << ", правильный ответ = ";
+        print_value(y_test[i]);
+        std::cout << '\n';
     }
 
     return 0;

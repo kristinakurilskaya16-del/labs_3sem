@@ -28,12 +28,13 @@ target_compile_options(app PRIVATE -Wall -Wextra)
 target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # Лабораторная №2
-add_executable(lab2
-    src/lab2_main.cpp
-)
+foreach(target lab2 lab2_gini lab2_variance)
+    add_executable(${target} src/lab2_main.cpp)
+    target_link_libraries(${target} PRIVATE core)
+    target_compile_options(${target} PRIVATE -Wall -Wextra)
+endforeach()
 
-target_link_libraries(lab2 PRIVATE core)
-target_compile_options(lab2 PRIVATE -Wall -Wextra)
+target_compile_definitions(lab2_variance PRIVATE LAB2_VARIANCE)
 
 # Тесты
 add_executable(tests
@@ -43,12 +44,17 @@ add_executable(tests
 target_link_libraries(tests PRIVATE core)
 target_compile_options(tests PRIVATE -Wall -Wextra)
 
+add_executable(test_decision_stump tests/test_decision_stump.cpp)
+target_link_libraries(test_decision_stump PRIVATE core)
+target_compile_options(test_decision_stump PRIVATE -Wall -Wextra)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(tests PRIVATE -UNDEBUG)
+    target_compile_options(test_decision_stump PRIVATE -UNDEBUG)
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    foreach(target core app lab2 tests)
+    foreach(target core app lab2 lab2_gini lab2_variance tests test_decision_stump)
         target_compile_options(${target} PRIVATE
             -fsanitize=address,undefined
             -fno-omit-frame-pointer
@@ -61,6 +67,7 @@ endif()
 
 enable_testing()
 add_test(NAME unit COMMAND tests)
+add_test(NAME decision_stump COMMAND test_decision_stump)
 
 # Документация не входит в обычную сборку и не требует Graphviz.
 find_package(Doxygen QUIET)
